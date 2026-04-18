@@ -1,0 +1,26 @@
+# ── Core ML / Audio ──────────────────────────────────────────────────────────
+faster-whisper           # replaces openai-whisper — 4x faster, same accuracy
+torch
+torchaudio
+librosa
+soundfile
+noisereduce
+numpy
+ffmpeg-python
+
+# ── URL / Download ────────────────────────────────────────────────────────────
+yt-dlp
+youtube-transcript-api
+feedparser
+requests
+
+# ── NLP ───────────────────────────────────────────────────────────────────────
+scikit-learn
+vaderSentiment
+
+# Optional — uncomment for better sentiment and semantic segmentation:
+# transformers
+# sentence-transformers
+
+# ── Web UI ────────────────────────────────────────────────────────────────────
+streamlit>=1.32

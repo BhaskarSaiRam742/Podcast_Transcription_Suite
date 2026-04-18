@@ -1,0 +1,38 @@
+# Secrets — never commit these
+.streamlit/secrets.toml
+
+# Temp audio files
+audio_processed/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# Whisper model cache (can be large)
+~/.cache/whisper/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
