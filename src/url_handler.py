@@ -37,23 +37,46 @@ def is_rss_feed(url: str) -> bool:
 
 def fetch_youtube_transcript(url: str):
     """
-    Attempt to fetch existing YouTube captions.
+    Attempt to fetch existing YouTube captions using multiple fallback strategies.
+    Tries: manual captions → auto-generated → any available language.
     Returns a transcript dict if found, else None.
     """
     try:
-        from youtube_transcript_api import YouTubeTranscriptApi
+        from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound
         video_id_match = re.search(r"(?:v=|youtu\.be/)([A-Za-z0-9_-]{11})", url)
         if not video_id_match:
             return None
 
         video_id = video_id_match.group(1)
-        transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
+
+        # Strategy 1: try English manual captions
+        # Strategy 2: try auto-generated captions
+        # Strategy 3: try any available language
+        transcript_list = None
+        try:
+            transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=["en"])
+        except Exception:
+            try:
+                transcripts = YouTubeTranscriptApi.list_transcripts(video_id)
+                # Try auto-generated first, then manual
+                try:
+                    t = transcripts.find_generated_transcript(["en"])
+                    transcript_list = t.fetch()
+                except Exception:
+                    # Just grab whatever is available
+                    t = next(iter(transcripts))
+                    transcript_list = t.fetch()
+            except Exception:
+                return None
+
+        if not transcript_list:
+            return None
 
         segments = [
             {
                 "start": entry["start"],
-                "end": entry["start"] + entry["duration"],
-                "text": entry["text"].strip()
+                "end":   entry["start"] + entry["duration"],
+                "text":  entry["text"].strip()
             }
             for entry in transcript_list
         ]
@@ -61,38 +84,72 @@ def fetch_youtube_transcript(url: str):
 
         return {
             "full_text": full_text,
-            "summary": "",
-            "segments": segments,
-            "source": "youtube_captions"
+            "summary":   "",
+            "segments":  segments,
+            "source":    "youtube_captions"
         }
     except Exception:
         return None
 
 
 def download_youtube_audio(url: str, output_dir: str = "audio_processed") -> str:
-    """Download YouTube video as audio using yt-dlp. Returns path to .wav file."""
+    """
+    Download YouTube audio using yt-dlp with cloud-friendly options.
+    Uses browser impersonation to bypass YouTube's bot detection (403 errors).
+    """
     import yt_dlp
 
     os.makedirs(output_dir, exist_ok=True)
     output_template = os.path.join(output_dir, "%(id)s.%(ext)s")
 
+    # Base options with browser impersonation
     ydl_opts = {
-        "format": "bestaudio/best",
+        "format": "bestaudio[ext=m4a]/bestaudio/best",
         "outtmpl": output_template,
         "postprocessors": [{
             "key": "FFmpegExtractAudio",
             "preferredcodec": "wav",
-            "preferredquality": "192",
+            "preferredquality": "128",     # lower quality = faster download
         }],
         "quiet": True,
         "no_warnings": True,
+        # Bypass bot detection
+        "extractor_args": {"youtube": {"player_client": ["web", "android"]}},
+        "http_headers": {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            ),
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        },
+        "socket_timeout": 60,
+        "retries": 5,
+        "fragment_retries": 5,
     }
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        video_id = info.get("id", "audio")
+    last_error = None
 
-    return os.path.join(output_dir, f"{video_id}.wav")
+    # Try multiple player clients in order until one works
+    for client in [["web"], ["android"], ["ios"], ["web_embedded"]]:
+        try:
+            opts = dict(ydl_opts)
+            opts["extractor_args"] = {"youtube": {"player_client": client}}
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                video_id = info.get("id", "audio")
+            return os.path.join(output_dir, f"{video_id}.wav")
+        except Exception as e:
+            last_error = e
+            continue
+
+    raise RuntimeError(
+        f"Could not download YouTube audio after trying all methods.\n"
+        f"Last error: {last_error}\n\n"
+        f"💡 Tip: YouTube videos with captions work best on cloud deployment. "
+        f"Try a video that has auto-generated subtitles, or upload the audio file directly."
+    )
 
 
 def download_direct_url(url: str, output_dir: str = "audio_processed") -> str:
